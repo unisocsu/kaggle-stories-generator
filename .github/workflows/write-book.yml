@@ -63,7 +63,7 @@ jobs:
       - name: Push to Kaggle
         env:
           KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
-          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
         run: |
           # If the GPU type is not what you want, check: kaggle kernels push -h
           kaggle kernels push -p kernel_build
