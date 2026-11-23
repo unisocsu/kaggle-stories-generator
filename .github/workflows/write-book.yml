@@ -1,0 +1,82 @@
+name: Write book on Kaggle
+
+on:
+  workflow_dispatch:
+    inputs:
+      title:
+        description: Book title
+        required: true
+      instructions:
+        description: Genre, plot, characters, tone, anything the model should follow
+        required: true
+      language:
+        description: Language of the book
+        default: Hebrew
+      hours:
+        description: Run time in hours (Kaggle GPU session limit is about 12)
+        default: "5"
+      chapter_tokens:
+        description: Max tokens generated per chapter
+        default: "4000"
+      context_tokens:
+        description: Context budget in tokens (limited by GPU memory)
+        default: "24000"
+      model_id:
+        description: Hugging Face repo (verify the exact official name, or use a pre-quantized repo)
+        default: Qwen/Qwen3.8-27B
+      quant:
+        description: bnb4 = quantize to 4-bit on load; none = repo is already quantized
+        type: choice
+        options:
+          - bnb4
+          - none
+        default: bnb4
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Kaggle CLI
+        run: pip install kaggle
+
+      - name: Build kernel folder
+        id: build
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          INPUT_TITLE: ${{ inputs.title }}
+          INPUT_INSTRUCTIONS: ${{ inputs.instructions }}
+          INPUT_LANGUAGE: ${{ inputs.language }}
+          INPUT_HOURS: ${{ inputs.hours }}
+          INPUT_CHAPTER_TOKENS: ${{ inputs.chapter_tokens }}
+          INPUT_CONTEXT_TOKENS: ${{ inputs.context_tokens }}
+          INPUT_MODEL_ID: ${{ inputs.model_id }}
+          INPUT_QUANT: ${{ inputs.quant }}
+        run: python scripts/build_kernel.py
+
+      - name: Push to Kaggle
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+        run: |
+          # If the GPU type is not what you want, check: kaggle kernels push -h
+          kaggle kernels push -p kernel_build
+
+      - name: Summary
+        env:
+          SLUG: ${{ steps.build.outputs.slug }}
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+        run: |
+          {
+            echo "Kernel pushed: \`$SLUG\`"
+            echo ""
+            echo "https://www.kaggle.com/code/$KAGGLE_USERNAME/$SLUG"
+            echo ""
+            echo "When it finishes, run the 'Fetch book from Kaggle' workflow with slug \`$SLUG\`."
+          } >> "$GITHUB_STEP_SUMMARY"
