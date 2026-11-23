@@ -17,12 +17,12 @@ jobs:
           python-version: "3.11"
 
       - name: Install Kaggle CLI
-        run: pip install kaggle
+        run: pip install kaggle six
 
       - name: Status and download
         env:
           KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
-          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
           SLUG: ${{ inputs.slug }}
         run: |
           kaggle kernels status "$KAGGLE_USERNAME/$SLUG"
