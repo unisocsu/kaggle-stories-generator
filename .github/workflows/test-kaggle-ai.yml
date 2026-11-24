@@ -5,7 +5,7 @@ on:
     inputs:
       model:
         description: Model slug from the Kaggle benchmark model list (see the "List models" step)
-        default: gemini-3.5-flash
+        default: gemini-3.8-flash
       title:
         description: Book title
         default: שומרי השקט
@@ -54,6 +54,7 @@ jobs:
         run: kaggle b t models
 
       - name: Push task
+        id: push
         env:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
         run: kaggle b t push story-chapter-test -f ai_task_build/task.py --wait 600
@@ -65,13 +66,13 @@ jobs:
         run: kaggle b t run story-chapter-test -m "$MODEL" --wait 900
 
       - name: Status
-        if: always()
+        if: steps.push.outcome == 'success'
         env:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
         run: kaggle b t status story-chapter-test
 
       - name: Logs (useful when the run failed)
-        if: always()
+        if: steps.push.outcome == 'success'
         continue-on-error: true
         env:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
@@ -79,7 +80,7 @@ jobs:
         run: kaggle b t log story-chapter-test -m "$MODEL"
 
       - name: Download results
-        if: always()
+        if: steps.push.outcome == 'success'
         continue-on-error: true
         env:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
