@@ -24,7 +24,7 @@ cfg = {
     "language": os.environ.get("INPUT_LANGUAGE", "Hebrew"),
     "hours": env_int("INPUT_HOURS", 5),
     "chapter_tokens": env_int("INPUT_CHAPTER_TOKENS", 4000),
-    "context_tokens": env_int("INPUT_CONTEXT_TOKENS", 24000),
+    "context_tokens": env_int("INPUT_CONTEXT_TOKENS", 12000),
     "model_id": os.environ["INPUT_MODEL_ID"],
     "quant": os.environ.get("INPUT_QUANT", "bnb4"),
     "skill": pathlib.Path("skills/story-craft.md").read_text(encoding="utf-8"),

@@ -44,6 +44,7 @@ subprocess.run(
 )
 subprocess.run("nvidia-smi", shell=True)
 
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 import torch  # noqa: E402
 import transformers  # noqa: E402
 from transformers import AutoTokenizer, BitsAndBytesConfig  # noqa: E402
@@ -52,7 +53,8 @@ from transformers import AutoTokenizer, BitsAndBytesConfig  # noqa: E402
 log("loading", CFG["model_id"])
 tok = AutoTokenizer.from_pretrained(CFG["model_id"])
 
-kw = dict(device_map="auto", torch_dtype=torch.float16)
+# "balanced" spreads the weights evenly so each GPU keeps free room for prefill
+kw = dict(device_map="balanced", dtype=torch.float16)
 n_gpu = torch.cuda.device_count()
 if n_gpu:
     # leave headroom on each card for the KV cache
@@ -140,24 +142,54 @@ def ntok(text):
     return len(tok(text, add_special_tokens=False)["input_ids"])
 
 
-def chat(system, user, max_new, temperature=0.8):
-    text = render(system, user)
-    enc = tok(text, return_tensors="pt", add_special_tokens=False).to(model.device)
-    n_in = enc["input_ids"].shape[-1]
-    t0 = time.time()
-    with torch.inference_mode():
-        out = model.generate(
+CHUNK = 1024  # prefill is processed in chunks of this many tokens
+USE_CHUNK = True
+
+
+def cleanup():
+    import gc
+
+    gc.collect()
+    torch.cuda.empty_cache()
+
+
+def _generate(enc, max_new, temperature):
+    global USE_CHUNK
+    extra = {"prefill_chunk_size": CHUNK} if USE_CHUNK else {}
+    try:
+        return model.generate(
             **enc,
             max_new_tokens=max_new,
             do_sample=True,
             temperature=temperature,
             top_p=0.95,
             repetition_penalty=1.05,
+            **extra,
         )
+    except torch.OutOfMemoryError:
+        raise
+    except Exception as e:
+        if not USE_CHUNK:
+            raise
+        log("chunked prefill not usable, disabling it:", repr(e)[:200])
+        USE_CHUNK = False
+        cleanup()
+        return _generate(enc, max_new, temperature)
+
+
+def chat(system, user, max_new, temperature=0.8):
+    text = render(system, user)
+    enc = tok(text, return_tensors="pt", add_special_tokens=False).to(model.device)
+    n_in = enc["input_ids"].shape[-1]
+    t0 = time.time()
+    with torch.inference_mode():
+        out = _generate(enc, max_new, temperature)
     STATS["sec"] += time.time() - t0
     STATS["tok"] += out.shape[-1] - n_in
     txt = tok.decode(out[0][n_in:], skip_special_tokens=True)
     txt = re.sub(r"<think>.*?</think>", "", txt, flags=re.S).strip()
+    del enc, out
+    cleanup()
     return txt
 
 
@@ -246,39 +278,64 @@ try:
             break
         t0 = time.time()
 
-        s = list(summaries)
-        while True:
-            prev = "\n".join(s) if s else "(this is the first chapter)"
-            final_note = (
-                " This is the final chapter: bring the story to its ending."
-                if i == len(lines)
-                else " Do not wrap up the whole book in this chapter."
-            )
-            user = (
-                head
-                + f"STORY NOTES:\n{notes}\n\nFULL OUTLINE:\n{outline_text}\n\n"
-                + f"STORY SO FAR (chapter summaries):\n{prev}\n\n"
-                + f"END OF THE PREVIOUS CHAPTER:\n{tail}\n\n"
-                + f"Now write chapter {line}\n\nTarget length: about {WORDS} words. "
-                "Start with the chapter heading, then the chapter text." + final_note
-            )
-            if ntok(SYS["write"] + user) <= CTX - MAX_NEW or len(s) <= 1:
-                break
-            s.pop(0)  # drop the oldest summary to stay inside the context budget
+        def build_user(limit, tail_chars):
+            s = list(summaries)
+            while True:
+                prev = "\n".join(s) if s else "(this is the first chapter)"
+                final_note = (
+                    " This is the final chapter: bring the story to its ending."
+                    if i == len(lines)
+                    else " Do not wrap up the whole book in this chapter."
+                )
+                user = (
+                    head
+                    + f"STORY NOTES:\n{notes}\n\nFULL OUTLINE:\n{outline_text}\n\n"
+                    + f"STORY SO FAR (chapter summaries):\n{prev}\n\n"
+                    + f"END OF THE PREVIOUS CHAPTER:\n{tail[-tail_chars:]}\n\n"
+                    + f"Now write chapter {line}\n\nTarget length: about {WORDS} words. "
+                    "Start with the chapter heading, then the chapter text." + final_note
+                )
+                if ntok(SYS["write"] + user) <= limit - MAX_NEW or len(s) <= 1:
+                    return user
+                s.pop(0)  # drop the oldest summary to stay inside the context budget
 
         log(f"writing chapter {i}/{len(lines)}")
-        text = chat(SYS["write"], user, max_new=MAX_NEW)
+        text = None
+        for scale in (1.0, 0.7, 0.5):
+            user = build_user(int(CTX * scale), int(1500 * scale))
+            try:
+                text = chat(SYS["write"], user, max_new=MAX_NEW)
+            except torch.OutOfMemoryError:
+                text = None
+            if text is not None:
+                break
+            log(f"out of memory at context scale {scale}, retrying with a smaller prompt")
+            cleanup()
+        if text is None:
+            raise RuntimeError("out of memory even with a reduced context")
         chapters.append(text)
         write(f"chapter_{i:02d}.md", text)
         tail = text[-1500:]
 
-        summ = chat(
-            SYS["sum"],
-            "Summarize this chapter in about 150 words as a continuity record. Output "
-            f"only the summary.\n\n{text}",
-            max_new=450,
-            temperature=0.3,
-        )
+        summ = None
+        body = text
+        for _ in range(2):
+            try:
+                summ = chat(
+                    SYS["sum"],
+                    "Summarize this chapter in about 150 words as a continuity record. "
+                    f"Output only the summary.\n\n{body}",
+                    max_new=450,
+                    temperature=0.3,
+                )
+            except torch.OutOfMemoryError:
+                summ = None
+            if summ is not None:
+                break
+            cleanup()
+            body = body[-int(len(body) * 0.6):]
+        if summ is None:
+            summ = "(summary unavailable) " + text[:300]
         summaries.append(f"Chapter {i}: {summ}")
         write("summaries.md", "\n".join(summaries))
         save_book()  # partial book is always available
@@ -292,6 +349,7 @@ try:
         "chapters_planned": len(lines),
         "chapter_limit_from_time": capacity,
         "tokens_per_second": round(tps(), 2),
+        "chunked_prefill": USE_CHUNK,
     }
 except Exception as e:  # keep whatever was written
     status = {"state": "error", "error": repr(e)[:500], "chapters_written": len(chapters)}

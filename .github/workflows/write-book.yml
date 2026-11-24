@@ -19,8 +19,8 @@ on:
         description: Max tokens generated per chapter
         default: "4000"
       context_tokens:
-        description: Context budget in tokens (limited by GPU memory)
-        default: "24000"
+        description: Context budget in tokens (prefill memory grows with this)
+        default: "12000"
       model_id:
         description: Hugging Face repo (verify the exact official name, or use a pre-quantized repo)
         default: Qwen/Qwen3.8-27B
