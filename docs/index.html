@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<title>קורא Markdown</title>
+<style>
+*{box-sizing:border-box}
+html{font-family:Arial,sans-serif;background:#f1f3f6;color:#202938}
+body{margin:0;min-width:280px}
+.top{background:#24364b;color:#fff;padding:17px 16px;text-align:center}
+.top h1{font-size:22px;margin:0}
+.top p{font-size:13px;margin:6px 0 0;color:#d6e0ec}
+.toolbar{background:#fff;border-bottom:1px solid #dce1e7;padding:10px;text-align:center}
+button,.file-label{display:inline-block;border:0;border-radius:6px;padding:10px 14px;margin:3px;background:#31577f;color:#fff;font-size:14px;cursor:pointer}
+button:hover,.file-label:hover{background:#244464}
+input[type=file]{display:none}
+.wrap{max-width:960px;margin:18px auto;padding:0 12px}
+#editor{display:block;width:100%;min-height:62vh;padding:17px;border:1px solid #cfd6df;border-radius:8px;background:#fff;color:#202938;font:15px/1.7 monospace;resize:vertical}
+#preview{background:#fff;border:1px solid #e0e4e9;border-radius:9px;padding:clamp(18px,4vw,42px);box-shadow:0 3px 15px rgba(20,35,50,.06);font-size:17px;line-height:1.9;overflow-wrap:break-word;word-wrap:break-word}
+#preview h1,#preview h2,#preview h3,#preview h4,#preview h5,#preview h6{line-height:1.35;color:#24364b}
+#preview h1{font-size:2em;border-bottom:2px solid #e5eaf0;padding-bottom:12px}
+#preview h2{font-size:1.55em;border-bottom:1px solid #e9edf2;padding-bottom:8px}
+#preview blockquote{margin:18px 0;padding:10px 16px;border-right:4px solid #668db5;background:#f4f7fa;color:#536273}
+#preview pre{direction:ltr;text-align:left;white-space:pre;overflow-x:auto;background:#1e2938;color:#f4f6f8;padding:16px;border-radius:7px;line-height:1.55}
+#preview code{font-family:Consolas,monospace;background:#edf0f4;padding:2px 5px;border-radius:3px}
+#preview pre code{background:transparent;padding:0;color:inherit}
+#preview a{color:#1769aa;word-break:break-word}
+#preview img{max-width:100%;height:auto}
+#preview table{border-collapse:collapse;width:100%;display:block;overflow-x:auto}
+#preview th,#preview td{border:1px solid #d9e0e7;padding:7px 10px;text-align:right}
+#preview th{background:#eef2f6}
+#preview hr{border:0;border-top:1px solid #dce2e9;margin:25px 0}
+#preview ul,#preview ol{padding-right:28px}
+.hidden{display:none!important}
+.note{font-size:12px;color:#6c7886;text-align:center;margin:12px}
+@media(max-width:600px){.wrap{margin:10px auto;padding:0 8px}#preview{font-size:16px;padding:19px 16px}#preview h1{font-size:1.7em}#preview h2{font-size:1.4em}button,.file-label{padding:9px 11px;font-size:13px}}
+</style>
+</head>
+<body>
+<div class="top"><h1>קורא Markdown</h1><p>קוראים וכותבים בנוחות, גם במסכים קטנים</p></div>
+<div class="toolbar">
+<label class="file-label" for="fileInput">פתיחת קובץ MD</label>
+<input type="file" id="fileInput" accept=".md,.markdown,.txt">
+<button type="button" onclick="showEditor()">עריכה</button>
+<button type="button" onclick="showPreview()">תצוגה</button>
+<button type="button" onclick="downloadMarkdown()">הורדת MD</button>
+</div>
+<div class="wrap">
+<textarea id="editor" dir="auto" aria-label="עורך Markdown" placeholder="הדבק כאן טקסט Markdown..."># ברוכים הבאים לקורא Markdown
+
+הדבק טקסט או פתח קובץ **.md** מהמכשיר.
+
+## מה אפשר לעצב?
+
+- **טקסט מודגש**
+- *טקסט נטוי*
+- ~~טקסט מחוק~~
+- קישורים ורשימות
+
+> ציטוטים מוצגים בתיבה נפרדת.
+
+### בלוק קוד
+
+```javascript
+function hello() {
+    alert("Hello!");
+}
+```
+
+| עמודה | תוכן |
+| --- | --- |
+| עברית | נתמכת |
+| מובייל | מותאם |
+
+[קישור לדוגמה](https://example.com)
+</textarea>
+<div id="preview" class="hidden"></div>
+<div class="note">העיבוד מתבצע מקומית בדפדפן. אין העלאה של הקובץ לשרת.</div>
+</div>
+<script>
+(function(){
+var editor=document.getElementById("editor");
+var preview=document.getElementById("preview");
+function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");}
+function inline(s){
+s=esc(s);
+s=s.replace(/!\[([^\]]*)\]\((https?:\/\/[^ )]+)\)/g,'<img alt="$1" src="$2">');
+s=s.replace(/\[([^\]]+)\]\((https?:\/\/[^ )]+)\)/g,'<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+s=s.replace(/`([^`]+)`/g,"<code>$1</code>");
+s=s.replace(/\*\*([^*]+)\*\*/g,"<strong>$1</strong>");
+s=s.replace(/__([^_]+)__/g,"<strong>$1</strong>");
+s=s.replace(/\*([^*]+)\*/g,"<em>$1</em>");
+s=s.replace(/_([^_]+)_/g,"<em>$1</em>");
+s=s.replace(/~~([^~]+)~~/g,"<del>$1</del>");
+return s;
+}
+function render(src){
+var lines=src.replace(/\r/g,"").split("\n"),out=[],p=[],list="",code=false,codeLines=[],table=[];
+function flushP(){if(p.length){out.push("<p>"+p.map(function(x){return inline(x);}).join("<br>")+"</p>");p=[];}}
+function closeList(){if(list){out.push("</"+list+">");list="";}}
+function flushTable(){if(table.length){var rows=table.slice(0);if(rows.length>1 && /^\s*\|?\s*:?-{3,}/.test(rows[1])) rows.splice(1,1);var h="<table>";for(var r=0;r<rows.length;r++){var cells=rows[r].replace(/^\s*\|/,"").replace(/\|\s*$/,"").split("|");h+=r===0?"<tr>":"<tr>";for(var c=0;c<cells.length;c++){var tag=r===0?"th":"td";h+="<"+tag+">"+inline(cells[c].trim())+"</"+tag+">";}h+="</tr>";}out.push(h+"</table>");table=[];}}
+for(var i=0;i<lines.length;i++){
+var line=lines[i],m;
+if(line.indexOf("```")===0){flushP();flushTable();closeList();if(code){out.push("<pre><code>"+esc(codeLines.join("\n"))+"</code></pre>");codeLines=[];code=false;}else{code=true;}continue;}
+if(code){codeLines.push(line);continue;}
+if(/^\s*\|.*\|\s*$/.test(line)){flushP();closeList();table.push(line);continue;}else{flushTable();}
+if(/^\s*$/.test(line)){flushP();closeList();continue;}
+m=line.match(/^(#{1,6})\s+(.+)$/);
+if(m){flushP();closeList();var n=m[1].length;out.push("<h"+n+">"+inline(m[2])+"</h"+n+">");continue;}
+if(/^\s*(---+|\*\*\*+|___+)\s*$/.test(line)){flushP();closeList();out.push("<hr>");continue;}
+if(/^\s*>/.test(line)){flushP();closeList();out.push("<blockquote>"+inline(line.replace(/^\s*>\s?/,""))+"</blockquote>");continue;}
+m=line.match(/^\s*([-*+]\s+)(.+)$/);var o=line.match(/^\s*(\d+)\.\s+(.+)$/);
+if(m||o){flushP();var t=m?"ul":"ol";if(list!==t){closeList();out.push("<"+t+">");list=t;}out.push("<li>"+inline((m||o)[2])+"</li>");continue;}
+closeList();p.push(line);
+}
+if(code)out.push("<pre><code>"+esc(codeLines.join("\n"))+"</code></pre>");
+flushP();flushTable();closeList();return out.join("\n");
+}
+function update(){preview.innerHTML=render(editor.value);}
+window.showEditor=function(){editor.className="";preview.className="hidden";};
+window.showPreview=function(){update();editor.className="hidden";preview.className="";};
+window.downloadMarkdown=function(){var blob=new Blob([editor.value],{type:"text/markdown;charset=utf-8"});var url=window.URL.createObjectURL(blob);var a=document.createElement("a");a.href=url;a.download="document.md";document.body.appendChild(a);a.click();document.body.removeChild(a);window.URL.revokeObjectURL(url);};
+editor.onkeyup=update;editor.oninput=update;
+document.getElementById("fileInput").onchange=function(e){var f=e.target.files[0];if(!f)return;var reader=new FileReader();reader.onload=function(ev){editor.value=ev.target.result;update();showPreview();};reader.readAsText(f,"UTF-8");};
+update();
+})();
+</script>
+</body>
+</html>
